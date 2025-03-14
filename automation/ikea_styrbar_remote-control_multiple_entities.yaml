@@ -1,7 +1,17 @@
 blueprint:
   name: IKEA Styrbar - control multiple Light/Switch Entities
-  description: Manage multiple Light/Switche Entities using the IKEA Styrbar
-    switch remote via Zigbee2MQTT
+  description: |
+    **Manage multiple Light/Switch Entities with the IKEA Styrbar Switch Remote via Zigbee2MQTT**
+
+    _Release Notes_:
+
+    **Version 1.0** (2025-01-29):  
+    - Initial release.
+
+    **Version 1.1** (2025-03-14):  
+    - Removed the "Target Switching Delay" option.  
+    - Eliminated unnecessary variables.  
+    - Fixed the "Force Brightness" option.
   domain: automation
   input:
     switch_remote:
@@ -18,11 +28,11 @@ blueprint:
       description: Choose one or more Light/Switch Entities you want to control
       selector:
         entity:
-          multiple: true
           filter:
             - domain:
                 - light
                 - switch
+          multiple: true
     selected_target:
       name: Selected Light/Switch Input Number Helper
       description: Choose the Input Number Helper to be exclusively used by the
@@ -61,24 +71,14 @@ blueprint:
       default: []
       selector:
         action: {}
-    increase_delay:
-      name: Delay after changing the selected Light/Switch index (in
-        milliseconds)
-      selector:
-        number:
-          min: 0.0
-          max: 1000.0
-          step: 1.0
-          mode: slider
-      default: 100
     force_brightness:
       name: Set the brightness to the Brightness Level (%) option value for
         every On command
       selector:
         boolean: {}
       default: false
-    brightness_level_pct:
-      name: Brightness Level (%) when the Force Brightness option is enabled
+    brightness_pct:
+      name: Brightness (%) when the Force Brightness option is enabled
       selector:
         number:
           min: 0.0
@@ -113,6 +113,16 @@ blueprint:
           step: 1.0
           mode: slider
       default: 20
+    blink_time:
+      name: Delay after changing the selected Light/Switch State to indicate
+        selected target (in milliseconds)
+      selector:
+        number:
+          min: 0.0
+          max: 1000.0
+          step: 1.0
+          mode: slider
+      default: 100
 
 description: ""
 
@@ -190,11 +200,7 @@ action:
   - variables:
       targets: !input targets
       selected_target: !input selected_target
-      force_brightness: !input force_brightness
-      brightness_level_pct: !input brightness_level_pct
       brightness_step_pct: !input brightness_step_pct
-      repeat_count: !input repeat_count
-      repeat_delay: !input repeat_delay
       target_index: "{% if states(selected_target) | int < 0 %}0{% elif states(selected_target) | int >= expand(targets) | list | count | int %}{{ expand(targets) | list | count | int - 1 }}{% else%}{{ states(selected_target) | int }}{% endif %}"
       target_entity_id: "{{ expand(targets)[target_index] | attr('entity_id') }}"
       target_entity_domain: "{{ target_entity_id.split('.')[0] }}"
@@ -209,13 +215,13 @@ action:
           - condition: template
             value_template: "{{ target_entity_domain == 'light' }}"
           - condition: template
-            value_template: "{{ force_brightness }}"
+            value_template: !input force_brightness
         sequence:
           - service: "{{ target_entity_domain }}.turn_on"
             target:
               entity_id: "{{ target_entity_id }}"
             data:
-              brightness_level_pct: "{{ brightness_level_pct }}"
+              brightness_pct: !input brightness_pct
         alias: on_force
       - conditions:
           - condition: template
@@ -240,7 +246,7 @@ action:
             value_template: "{{ target_entity_domain == 'light' }}"
         sequence:
           - repeat:
-              count: "{{ repeat_count }}"
+              count: !input repeat_count
               sequence:
                 - service: light.turn_on
                   metadata: {}
@@ -252,7 +258,7 @@ action:
                     hours: 0
                     minutes: 0
                     seconds: 0
-                    milliseconds: "{{ repeat_delay }}"
+                    milliseconds: !input repeat_delay
         alias: brightness_move_up
       - conditions:
           - condition: template
@@ -261,7 +267,7 @@ action:
             value_template: "{{ target_entity_domain == 'light' }}"
         sequence:
           - repeat:
-              count: "{{ repeat_count }}"
+              count: !input repeat_count
               sequence:
                 - service: light.turn_on
                   metadata: {}
@@ -273,7 +279,7 @@ action:
                     hours: 0
                     minutes: 0
                     seconds: 0
-                    milliseconds: "{{ repeat_delay }}"
+                    milliseconds: !input repeat_delay
         alias: brightness_move_down
       - conditions:
           - condition: template
@@ -291,21 +297,11 @@ action:
                   - condition: template
                     value_template: "{{ states(selected_target) | int <= 0 }}"
                 sequence:
-                  - delay:
-                      hours: 0
-                      minutes: 0
-                      seconds: 0
-                      milliseconds: !input increase_delay
                   - service: input_number.set_value
                     data_template:
                       entity_id: !input selected_target
                       value: "{{ expand(targets) | list | count | int - 1 }}"
             default:
-              - delay:
-                  hours: 0
-                  minutes: 0
-                  seconds: 0
-                  milliseconds: !input increase_delay
               - service: input_number.decrement
                 entity_id: !input selected_target
           - variables:
@@ -320,7 +316,7 @@ action:
                   hours: 0
                   minutes: 0
                   seconds: 0
-                  milliseconds: "{{ repeat_delay * 2 }}"
+                  milliseconds: !input blink_time
               - service: "{{ target_entity_domain }}.turn_{% if states(target_entity_id) == 'off' %}on{% else %}off{% endif %}"
                 target:
                   entity_id: "{{ target_entity_id }}"
@@ -344,21 +340,11 @@ action:
                   - condition: template
                     value_template: "{{ states(selected_target) | int >= expand(targets) | list | count | int - 1 }}"
                 sequence:
-                  - delay:
-                      hours: 0
-                      minutes: 0
-                      seconds: 0
-                      milliseconds: !input increase_delay
                   - service: input_number.set_value
                     entity_id: !input selected_target
                     data:
                       value: 0
             default:
-              - delay:
-                  hours: 0
-                  minutes: 0
-                  seconds: 0
-                  milliseconds: !input increase_delay
               - service: input_number.increment
                 entity_id: !input selected_target
           - variables:
@@ -373,7 +359,7 @@ action:
                   hours: 0
                   minutes: 0
                   seconds: 0
-                  milliseconds: "{{ repeat_delay * 2 }}"
+                  milliseconds: !input blink_time
               - service: "{{ target_entity_domain }}.turn_{% if states(target_entity_id) == 'off' %}on{% else %}off{% endif %}"
                 target:
                   entity_id: "{{ target_entity_id }}"
